@@ -73,6 +73,7 @@ app.add_route(new_knowledge_base, "/api/qa_handler/new_knowledge_base", methods=
 app.add_route(upload_files, "/api/qa_handler/upload_files", methods=['POST'])  # tags=["上传文件"]
 app.add_route(local_doc_chat, "/api/local_doc_qa/local_doc_chat", methods=['POST'])  # tags=["问答接口"] 
 app.add_route(list_kbs, "/api/qa_handler/list_knowledge_base", methods=['POST'])  # tags=["知识库列表"] 
+app.add_route(upload_faqs, "/api/local_doc_qa/upload_faqs", methods=['POST'])  # tags=["上传FAQ"]
 # app.add_route(list_docs, "/api/local_doc_qa/list_files", methods=['POST'])  # tags=["文件列表"]
 # app.add_route(get_total_status, "/api/local_doc_qa/get_total_status", methods=['POST'])  # tags=["获取所有知识库状态数据库"]
 # app.add_route(clean_files_by_status, "/api/local_doc_qa/clean_files_by_status", methods=['POST'])  # tags=["清理数据库"]

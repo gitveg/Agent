@@ -7,6 +7,8 @@ import os
 import time
 import traceback
 import urllib
+
+import tqdm
 # 获取当前脚本的绝对路径
 current_script_path = os.path.abspath(__file__)
 
@@ -20,9 +22,9 @@ root_dir = os.path.dirname(root_dir)
 
 # 将项目根目录添加到sys.path
 sys.path.append(root_dir)
-from src.utils.general_utils import get_time, get_time_async, \
+from src.utils.general_utils import check_and_transform_excel, get_time, get_time_async, \
     safe_get, check_user_id_and_user_info, correct_kb_id, \
-        check_filename
+        check_filename, simplify_filename, truncate_filename
 from src.core.qa_handler import QAHandler
 from src.utils.log_handler import debug_logger
 from src.utils.general_utils import  fast_estimate_file_char_count
@@ -204,7 +206,7 @@ async def upload_files(req: request):
             continue
         # 将文件保存到本地
         local_file = LocalFile(user_id, kb_id, file, file_name)
-        # TODO：现在只能处理txt
+        # TODO：功能待完善，上传文件类型检查
         chars = fast_estimate_file_char_count(local_file.file_location)
         debug_logger.info(f"{file_name} char_size: {chars}")
         if chars and chars > MAX_CHARS:
@@ -417,67 +419,66 @@ async def local_doc_chat(req: request):
                                                                                     top_p=top_p,
                                                                                     top_k=top_k
                                                                                     ):
-                    chunk_data = resp["result"]
-                    if not chunk_data:
-                        continue
-                    chunk_str = chunk_data[6:]
-                    if chunk_str.startswith("[DONE]"):
-                        retrieval_documents = format_source_documents(resp["retrieval_documents"])
-                        source_documents = format_source_documents(resp["source_documents"])
-                        result = next_history[-1][1]
-                        # result = resp['result']
-                        time_record['chat_completed'] = round(time.perf_counter() - preprocess_start, 2)
-                        if time_record.get('llm_completed', 0) > 0:
-                            time_record['tokens_per_second'] = round(
-                                len(result) / time_record['llm_completed'], 2)
-                        formatted_time_record = format_time_record(time_record)
-                        chat_data = {'user_id': user_id, 'kb_ids': kb_ids, 'query': question, "model": model,
-                                    "product_source": request_source, 'time_record': formatted_time_record,
-                                    'history': history,
-                                    'condense_question': resp['condense_question'], 'prompt': resp['prompt'],
-                                    'result': result, 'retrieval_documents': retrieval_documents,
-                                    'source_documents': source_documents}
-                        qa_handler.mysql_client.add_qalog(**chat_data)
-                        debug_logger.info("chat_data: %s", chat_data)
-                        debug_logger.info("response: %s", chat_data['result'])
-                        stream_res = {
-                            "code": 200,
-                            "msg": "success stream chat",
-                            "question": question,
-                            "response": result,
-                            "model": model,
-                            "history": next_history,
-                            "condense_question": resp['condense_question'],
-                            "source_documents": source_documents,
-                            "retrieval_documents": retrieval_documents,
-                            "time_record": formatted_time_record,
-                            "show_images": resp.get('show_images', [])
-                        }
-                    else:
-                        time_record['rollback_length'] = resp.get('rollback_length', 0)
-                        if 'first_return' not in time_record:
-                            time_record['first_return'] = round(time.perf_counter() - preprocess_start, 2)
-                        chunk_js = json.loads(chunk_str)
-                        delta_answer = chunk_js["answer"]
-                        stream_res = {
-                            "code": 200,
-                            "msg": "success",
-                            "question": "",
-                            "response": delta_answer,
-                            "history": [],
-                            "source_documents": [],
-                            "retrieval_documents": [],
-                            "time_record": format_time_record(time_record),
-                        }
-                    await response.write(f"data: {json.dumps(stream_res, ensure_ascii=False)}\n\n")
-                    if chunk_str.startswith("[DONE]"):
-                        await response.eof()
-                    await asyncio.sleep(0.001)
-
-            response_stream = ResponseStream(generate_answer, content_type='text/event-stream')
-            return response_stream
+                chunk_data = resp["result"]
+                if not chunk_data:
+                    continue
+                chunk_str = chunk_data[6:]
+                if chunk_str.startswith("[DONE]"):
+                    retrieval_documents = format_source_documents(resp["retrieval_documents"])
+                    source_documents = format_source_documents(resp["source_documents"])
+                    result = next_history[-1][1]
+                    # result = resp['result']
+                    time_record['chat_completed'] = round(time.perf_counter() - preprocess_start, 2)
+                    if time_record.get('llm_completed', 0) > 0:
+                        time_record['tokens_per_second'] = round(
+                            len(result) / time_record['llm_completed'], 2)
+                    formatted_time_record = format_time_record(time_record)
+                    chat_data = {'user_id': user_id, 'kb_ids': kb_ids, 'query': question, "model": model,
+                                "product_source": request_source, 'time_record': formatted_time_record,
+                                'history': history,
+                                'condense_question': resp['condense_question'], 'prompt': resp['prompt'],
+                                'result': result, 'retrieval_documents': retrieval_documents,
+                                'source_documents': source_documents}
+                    qa_handler.mysql_client.add_qalog(**chat_data)
+                    debug_logger.info("chat_data: %s", chat_data)
+                    debug_logger.info("response: %s", chat_data['result'])
+                    stream_res = {
+                        "code": 200,
+                        "msg": "success stream chat",
+                        "question": question,
+                        "response": result,
+                        "model": model,
+                        "history": next_history,
+                        "condense_question": resp['condense_question'],
+                        "source_documents": source_documents,
+                        "retrieval_documents": retrieval_documents,
+                        "time_record": formatted_time_record,
+                        "show_images": resp.get('show_images', [])
+                    }
+                else:
+                    time_record['rollback_length'] = resp.get('rollback_length', 0)
+                    if 'first_return' not in time_record:
+                        time_record['first_return'] = round(time.perf_counter() - preprocess_start, 2)
+                    chunk_js = json.loads(chunk_str)
+                    delta_answer = chunk_js["answer"]
+                    stream_res = {
+                        "code": 200,
+                        "msg": "success",
+                        "question": "",
+                        "response": delta_answer,
+                        "history": [],
+                        "source_documents": [],
+                        "retrieval_documents": [],
+                        "time_record": format_time_record(time_record),
+                    }
+                await response.write(f"data: {json.dumps(stream_res, ensure_ascii=False)}\n\n")
+                if chunk_str.startswith("[DONE]"):
+                    await response.eof()
+                await asyncio.sleep(0.001)
+        # 返回流式相应
+        response_stream = ResponseStream(generate_answer, content_type='text/event-stream')
+        return response_stream
     else:
-        # 进行检索生成回答
         async for resp, history in qa_handler.get_knowledge_based_answer(model=model,
                                                                            max_token=max_token,
                                                                            kb_ids=kb_ids,
@@ -498,27 +499,29 @@ async def local_doc_chat(req: request):
                                                                            top_p=top_p,
                                                                            top_k=top_k
                                                                            ):
-            # 如果只需要检索到的文档
-            if only_need_search_results:
-                return sanic_json(
-                    {"code": 200, "question": question, "source_documents": format_source_documents(resp)})
-            # 格式化检索到的文档信息
-            retrieval_documents = format_source_documents(resp["retrieval_documents"])
-            source_documents = format_source_documents(resp["source_documents"])
-            formatted_time_record = format_time_record(time_record)
-            chat_data = {'user_id': user_id, 'kb_ids': kb_ids, 'query': question, 'time_record': formatted_time_record,
-                        'history': history, "condense_question": resp['condense_question'], "model": model,
-                        "product_source": request_source,
-                        'retrieval_documents': retrieval_documents, 'prompt': resp['prompt'], 'result': resp['result'],
-                        'source_documents': source_documents}
-            # qa_handler.mysql_client.add_qalog(**chat_data)
-            debug_logger.info("chat_data: %s", chat_data)
-            debug_logger.info("response: %s", chat_data['result'])
-            return sanic_json({"code": 200, "msg": "success no stream chat", "question": question,
-                            "response": resp["result"], "model": model,
-                            "history": history, "condense_question": resp['condense_question'],
-                            "source_documents": source_documents, "retrieval_documents": retrieval_documents,
-                            "time_record": formatted_time_record})
+            pass
+            
+        # 如果只需要检索到的文档
+        if only_need_search_results:
+            return sanic_json(
+                {"code": 200, "question": question, "source_documents": format_source_documents(resp)})
+        # 格式化检索到的文档信息
+        retrieval_documents = format_source_documents(resp["retrieval_documents"])
+        source_documents = format_source_documents(resp["source_documents"])
+        formatted_time_record = format_time_record(time_record)
+        chat_data = {'user_id': user_id, 'kb_ids': kb_ids, 'query': question, 'time_record': formatted_time_record,
+                    'history': history, "condense_question": resp['condense_question'], "model": model,
+                    "product_source": request_source,
+                    'retrieval_documents': retrieval_documents, 'prompt': resp['prompt'], 'result': resp['result'],
+                    'source_documents': source_documents}
+        # qa_handler.mysql_client.add_qalog(**chat_data)
+        debug_logger.info("chat_data: %s", chat_data)
+        debug_logger.info("response: %s", chat_data['result'])
+        return sanic_json({"code": 200, "msg": "success no stream chat", "question": question,
+                        "response": resp["result"], "model": model,
+                        "history": history, "condense_question": resp['condense_question'],
+                        "source_documents": source_documents, "retrieval_documents": retrieval_documents,
+                        "time_record": formatted_time_record})
 
 @get_time_async
 async def list_kbs(req: request):
@@ -528,3 +531,91 @@ async def list_kbs(req: request):
     needs to be added here.
     """
     return sanic_json({"code": 200, "msg": "success", "data": []})
+
+@get_time_async
+async def upload_faqs(req: request):
+    qa_handler: QAHandler = req.app.ctx.qa_handler
+    user_id = safe_get(req, 'user_id')
+    user_info = safe_get(req, 'user_info', "1234")
+    passed, msg = check_user_id_and_user_info(user_id, user_info)
+    if not passed:
+        return sanic_json({"code": 2001, "msg": msg})
+    user_id = user_id + '__' + user_info
+    debug_logger.info("upload_faqs %s", user_id)
+    debug_logger.info("user_info %s", user_info)
+    kb_id = safe_get(req, 'kb_id')
+    kb_id = correct_kb_id(kb_id)
+    debug_logger.info("kb_id %s", kb_id)
+    faqs = safe_get(req, 'faqs')
+    chunk_size = safe_get(req, 'chunk_size', default=DEFAULT_PARENT_CHUNK_SIZE)
+    debug_logger.info("chunk_size: %s", chunk_size)
+
+    # 增加上传文件的功能和上传文件的检查解析
+    file_status = {}
+    if faqs is None:
+        files = req.files.getlist('files')
+        faqs = []
+        for file in files:
+            debug_logger.info('ori name: %s', file.name)
+            file_name = urllib.parse.unquote(file.name, encoding='UTF-8')
+            debug_logger.info('decode name: %s', file_name)
+            # 删除掉全角字符
+            file_name = re.sub(r'[\uFF01-\uFF5E\u3000-\u303F]', '', file_name)
+            file_name = file_name.replace("/", "_")
+            debug_logger.info('cleaned name: %s', file_name)
+            file_name = truncate_filename(file_name)
+            file_faqs = check_and_transform_excel(file.body)
+            if isinstance(file_faqs, str):
+                file_status[file_name] = file_faqs
+            else:
+                faqs.extend(file_faqs)
+                file_status[file_name] = "success"
+
+    if len(faqs) > 1000:
+        return sanic_json({"code": 2002, "msg": f"fail, faqs too many, max length is 1000."})
+
+    not_exist_kb_ids = qa_handler.mysql_client.check_kb_exist(user_id, [kb_id])
+    if not_exist_kb_ids:
+        msg = "invalid kb_id: {}, please check...".format(not_exist_kb_ids)
+        return sanic_json({"code": 2001, "msg": msg})
+
+    data = []
+    local_files = []
+    now = datetime.now()
+    timestamp = now.strftime("%Y%m%d%H%M")
+    debug_logger.info(f"start insert {len(faqs)} faqs to mysql, user_id: {user_id}, kb_id: {kb_id}")
+    for faq in tqdm(faqs):
+        ques = faq['question']
+        if len(ques) > 512 or len(faq['answer']) > 2048:
+            return sanic_json(
+                {"code": 2003, "msg": f"fail, faq too long, max length of question is 512, answer is 2048."})
+        file_name = f"FAQ_{ques}.faq"
+        file_name = file_name.replace("/", "_").replace(":", "_")  # 文件名中的/和：会导致写入时出错
+        file_name = simplify_filename(file_name)
+        file_size = len(ques) + len(faq['answer'])
+        # faq_id = local_doc_qa.milvus_summary.get_faq_by_question(ques, kb_id)
+        # if faq_id:
+        #     debug_logger.info(f"faq question {ques} already exist, skip")
+        #     data.append({
+        #         "file_id": faq_id,
+        #         "file_name": file_name,
+        #         "status": "green",
+        #         "length": file_size,
+        #         "timestamp": local_doc_qa.milvus_summary.get_file_timestamp(faq_id)
+        #     })
+        #     continue
+        local_file = LocalFile(user_id, kb_id, faq, file_name)
+        file_id = local_file.file_id
+        file_location = local_file.file_location
+        local_files.append(local_file)
+        qa_handler.mysql_client.add_faq(file_id, user_id, kb_id, faq['question'], faq['answer'], faq.get('nos_keys', ''))
+        qa_handler.mysql_client.add_file(file_id, user_id, kb_id, file_name, file_size, file_location,
+                                             chunk_size, timestamp)
+        # debug_logger.info(f"{file_name}, {file_id}, {msg}, {faq}")
+        data.append(
+            {"file_id": file_id, "file_name": file_name, "status": "gray", "length": file_size,
+             "timestamp": timestamp})
+    debug_logger.info(f"end insert {len(faqs)} faqs to mysql, user_id: {user_id}, kb_id: {kb_id}")
+
+    msg = "success，后台正在飞速上传文件，请耐心等待"
+    return sanic_json({"code": 200, "msg": msg, "data": data})

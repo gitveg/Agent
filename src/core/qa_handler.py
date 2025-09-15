@@ -32,18 +32,20 @@ root_dir = os.path.dirname(os.path.dirname(
     os.path.dirname(current_script_path)))
 sys.path.append(root_dir)
 
+def clear_string_is_equal(str1, str2):
+    raise NotImplementedError
+
 
 class QAHandler:
     def __init__(self, port):
         self.port = port
-        self.milvus_cache = None
         self.embeddings: SBIEmbeddings = None
         self.rerank: SBIRerank = None
         self.chunk_conent: bool = True
         self.score_threshold: int = VECTOR_SEARCH_SCORE_THRESHOLD
         self.milvus_kb: MilvusClient = None
         self.retriever: Retriever = None
-        self.milvus_summary: MysqlClient = None
+        self.mysql_client: MysqlClient = None
         self.es_client: ESClient = None
         self.session = self.create_retry_session(retries=3, backoff_factor=1)
         # self.doc_splitter = CharacterTextSplitter(
@@ -339,8 +341,7 @@ class QAHandler:
     async def get_knowledge_based_answer(self, model, max_token, kb_ids, query, retriever, custom_prompt, time_record,
                                          temperature, api_base, api_key, api_context_length, top_p, top_k, web_chunk_size,
                                          chat_history=None, streaming: bool = True, rerank: bool = False,
-                                         only_need_search_results: bool = False, need_web_search=False,
-                                         hybrid_search=False):
+                                         only_need_search_results: bool = False, hybrid_search=False):
         # 创建与大模型交互句柄
         custom_llm = OpenAILLM(model, max_token, api_base,
                                api_key, api_context_length, top_p, temperature)
@@ -412,36 +413,6 @@ class QAHandler:
                                                                hybrid_search, top_k)
         else:
             source_documents = []
-        # 这里处理网络搜索
-        # if need_web_search:
-        #     t1 = time.perf_counter()
-        #     web_search_results = self.web_page_search(query, top_k=3)
-        #     web_splitter = RecursiveCharacterTextSplitter(
-        #         separators=SEPARATORS,
-        #         chunk_size=web_chunk_size,
-        #         chunk_overlap=int(web_chunk_size / 4),
-        #         length_function=num_tokens_embed,
-        #     )
-        #     web_search_results = web_splitter.split_documents(web_search_results)
-
-        #     current_doc_id = 0
-        #     current_file_id = web_search_results[0].metadata['file_id']
-        #     for doc in web_search_results:
-        #         if doc.metadata['file_id'] == current_file_id:
-        #             doc.metadata['doc_id'] = current_file_id + '_' + str(current_doc_id)
-        #             current_doc_id += 1
-        #         else:
-        #             current_file_id = doc.metadata['file_id']
-        #             current_doc_id = 0
-        #             doc.metadata['doc_id'] = current_file_id + '_' + str(current_doc_id)
-        #             current_doc_id += 1
-        #         doc_json = doc.to_json()
-        #         if doc_json['kwargs'].get('metadata') is None:
-        #             doc_json['kwargs']['metadata'] = doc.metadata
-        #         self.milvus_summary.add_document(doc_id=doc.metadata['doc_id'], json_data=doc_json)
-
-        #     t2 = time.perf_counter()
-        #     time_record['web_search'] = round(t2 - t1, 2)
 
         # 对检索的内容进行rerank
         # 将检索内容进行去重
@@ -492,24 +463,24 @@ class QAHandler:
         # for doc in source_documents:
         #     doc.page_content = re.sub(r'^\[headers]\(.*?\)\n', '', doc.page_content)
 
-        # 这里是处理FAQ的逻辑，后续在开发
-        # high_score_faq_documents = [doc for doc in source_documents if
-        #                             doc.metadata['file_name'].endswith('.faq') and doc.metadata['score'] >= 0.9]
-        # if high_score_faq_documents:
-        #     source_documents = high_score_faq_documents
+        # 这里是处理FAQ的逻辑，后续在开发 TODO
+        high_score_faq_documents = [doc for doc in source_documents if
+                                    doc.metadata['file_name'].endswith('.faq') and doc.metadata['score'] >= 0.9]
+        if high_score_faq_documents:
+            source_documents = high_score_faq_documents
         # # FAQ完全匹配处理逻辑
-        # for doc in source_documents:
-        #     if doc.metadata['file_name'].endswith('.faq') and clear_string_is_equal(
-        #             doc.metadata['faq_dict']['question'], query):
-        #         debug_logger.info(f"match faq question: {query}")
-        #         if only_need_search_results:
-        #             yield source_documents, None
-        #             return
-        #         res = doc.metadata['faq_dict']['answer']
-        #         async for response, history in self.generate_response(query, res, condense_question, source_documents,
-        #                                                               time_record, chat_history, streaming, 'MATCH_FAQ'):
-        #             yield response, history
-        #         return
+        for doc in source_documents:
+            if doc.metadata['file_name'].endswith('.faq') and clear_string_is_equal(
+                    doc.metadata['faq_dict']['question'], query):
+                debug_logger.info(f"match faq question: {query}")
+                if only_need_search_results:
+                    yield source_documents, None
+                    return
+                res = doc.metadata['faq_dict']['answer']
+                async for response, history in self.generate_response(query, res, condense_question, source_documents,
+                                                                      time_record, chat_history, streaming, 'MATCH_FAQ'):
+                    yield response, history
+                return
         # 获取今日日期
         today = time.strftime("%Y-%m-%d", time.localtime())
         # 获取当前时间

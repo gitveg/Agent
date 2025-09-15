@@ -419,3 +419,8 @@ class MysqlClient:
             return result[0][0] == 1
         else:
             return False
+        
+    def add_faq(self, faq_id, user_id, kb_id, question, answer, nos_keys):
+        # insert_logger.info(f"add_faq: {faq_id}, {user_id}, {kb_id}, {question}, {nos_keys}")
+        query = "INSERT INTO Faqs (faq_id, user_id, kb_id, question, answer, nos_keys) VALUES (%s, %s, %s, %s, %s, %s)"
+        self.execute_query_(query, (faq_id, user_id, kb_id, question, answer, nos_keys), commit=True)
