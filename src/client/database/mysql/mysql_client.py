@@ -424,3 +424,13 @@ class MysqlClient:
         # insert_logger.info(f"add_faq: {faq_id}, {user_id}, {kb_id}, {question}, {nos_keys}")
         query = "INSERT INTO Faqs (faq_id, user_id, kb_id, question, answer, nos_keys) VALUES (%s, %s, %s, %s, %s, %s)"
         self.execute_query_(query, (faq_id, user_id, kb_id, question, answer, nos_keys), commit=True)
+        
+    def update_file_msg(self, file_id, msg):
+        query = "UPDATE File SET msg = %s WHERE file_id = %s"
+        insert_logger.info(f"Update file msg: {file_id} {msg}")
+        self.execute_query_(query, (msg, file_id), commit=True)
+        
+    def update_file_upload_infos(self, file_id, upload_infos):
+        upload_infos = json.dumps(upload_infos, ensure_ascii=False)
+        query = "UPDATE File SET upload_infos = %s WHERE file_id = %s"
+        self.execute_query_(query, (upload_infos, file_id), commit=True)

@@ -11,9 +11,9 @@ sys.path.append(root_dir)
 print(root_dir)
 
 from sanic import Sanic, response
-from src.utils.log_handler import insert_logger
+from src.utils.log_handler import insert_logger, debug_logger
 from src.utils.general_utils import get_time_async
-from src.core.file_handler.file_handler import FileHandler, LocalFile
+from src.core.file_handler.file_handler import FileHandler
 from src.client.database.milvus.milvus_client import MilvusClient
 from src.client.database.mysql.mysql_client import MysqlClient
 from src.client.database.elasticsearch.es_client import ESClient
@@ -53,7 +53,7 @@ db_config = {
 
 
 @get_time_async
-async def process_data(retriever, milvus_client, mysql_client, file_info, time_record):
+async def process_data(milvus_client: MilvusClient, mysql_client: MysqlClient, es_client: ESClient, file_info, time_record):
     parse_timeout_seconds = 300
     insert_timeout_seconds = 300
     content_length = -1
@@ -63,7 +63,7 @@ async def process_data(retriever, milvus_client, mysql_client, file_info, time_r
     # 获取格式为'2021-08-01 00:00:00'的时间戳
     insert_timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
     mysql_client.update_knowlegde_base_latest_insert_time(kb_id, insert_timestamp)
-    local_file = FileHandler(user_id, kb_id, file_id, file_location, file_name, file_url, chunk_size, mysql_client)
+    file_handler = FileHandler(user_id, kb_id, file_id, file_location, file_name, file_url, chunk_size, mysql_client)
     msg = "success"
     chunks_number = 0
     mysql_client.update_file_msg(file_id, f'Processing:{random.randint(1, 5)}%')
@@ -71,10 +71,10 @@ async def process_data(retriever, milvus_client, mysql_client, file_info, time_r
     start = time.perf_counter()
     try:
         await asyncio.wait_for(
-            asyncio.to_thread(local_file.split_file_to_docs),
+            asyncio.to_thread(file_handler.split_file_to_docs),
             timeout=parse_timeout_seconds
         )
-        content_length = sum([len(doc.page_content) for doc in local_file.docs])
+        content_length = sum([len(doc.page_content) for doc in file_handler.docs])
         if content_length > MAX_CHARS:
             status = 'red'
             msg = f"{file_name} content_length too large, {content_length} >= MaxLength({MAX_CHARS})"
@@ -84,7 +84,7 @@ async def process_data(retriever, milvus_client, mysql_client, file_info, time_r
             msg = f"{file_name} content_length is 0, file content is empty or The URL exists anti-crawling or requires login."
             return status, content_length, chunks_number, msg
     except asyncio.TimeoutError:
-        local_file.event.set()
+        file_handler.event.set()
         insert_logger.error(f'Timeout: split_file_to_docs took longer than {parse_timeout_seconds} seconds')
         status = 'red'
         msg = f"split_file_to_docs timeout: {parse_timeout_seconds}s"
@@ -98,21 +98,23 @@ async def process_data(retriever, milvus_client, mysql_client, file_info, time_r
         return status, content_length, chunks_number, msg
     end = time.perf_counter()
     time_record['parse_time'] = round(end - start, 2)
-    insert_logger.info(f'parse time: {end - start} {len(local_file.docs)}')
+    insert_logger.info(f'parse time: {end - start} {len(file_handler.docs)}')
     mysql_client.update_file_msg(file_id, f'Processing:{random.randint(5, 75)}%')
 
     try:
         start = time.perf_counter()
-        chunks_number, insert_time_record = await asyncio.wait_for(
-            retriever.insert_documents(local_file.docs, chunk_size),
+        file_handler.docs, full_docs,chunks_number, file_handler.embs = await asyncio.wait_for(
+            milvus_client.insert_documents(file_handler.docs, chunk_size),
             timeout=insert_timeout_seconds)
-        insert_time = time.perf_counter()
-        time_record.update(insert_time_record)
-        insert_logger.info(f'insert time: {insert_time - start}')
-        mysql_client.update_chunks_number(local_file.file_id, chunks_number)
+        # TODO: 后续有需要加上计时
+        # insert_time = time.perf_counter()
+        # time_record.update(insert_time_record)
+        # insert_logger.info(f'insert time: {insert_time - start}')
+        mysql_client.store_parent_chunks(full_docs)
+        mysql_client.modify_file_chunks_number(file_id, user_id, kb_id, chunks_number)
     except asyncio.TimeoutError:
         insert_logger.error(f'Timeout: milvus insert took longer than {insert_timeout_seconds} seconds')
-        expr = f'file_id == \"{local_file.file_id}\"'
+        expr = f'file_id == \"{file_handler.file_id}\"'
         milvus_client.delete_expr(expr)
         status = 'red'
         time_record['insert_timeout'] = True
@@ -125,6 +127,30 @@ async def process_data(retriever, milvus_client, mysql_client, file_info, time_r
         time_record['insert_error'] = True
         msg = f"milvus insert error"
         return status, content_length, chunks_number, msg
+    
+    if es_client is not None:
+        try:
+            # docs的doc_id是file_id + '_' + i 注意这里的docs_id指的是es数据库中的唯一标识
+            # 而不是父块编号
+            docs_ids = [doc.metadata['file_id'] + '_' + str(i) for i, doc in enumerate(file_handler.docs)]
+            # ids指定文档的唯一标识符
+            es_res = await asyncio.wait_for(
+            es_client.es_store.aadd_documents(file_handler.docs, ids=docs_ids),
+            timeout=insert_timeout_seconds)
+            debug_logger.info(f'es_store insert number: {len(es_res)}, {es_res[0]}')
+        except asyncio.TimeoutError:
+            insert_logger.error(f'Timeout: es_store insert took longer than {insert_timeout_seconds} seconds')
+            status = 'red'
+            time_record['insert_timeout'] = True
+            msg = f"es_store insert timeout: {insert_timeout_seconds}s"
+            return status, content_length, chunks_number, msg
+        except Exception as e:
+            error_info = f'es_store insert error: {traceback.format_exc()}'
+            insert_logger.error(error_info)
+            status = 'red'
+            time_record['insert_error'] = True
+            msg = f"es_store insert error"
+            return status, content_length, chunks_number, msg
 
     mysql_client.update_file_msg(file_id, f'Processing:{random.randint(75, 100)}%')
     time_record['upload_total_time'] = round(time.perf_counter() - process_start, 2)
@@ -181,8 +207,9 @@ async def check_and_process(pool):
 
                         time_record = {}
                         # 现在处理数据
-                        status, content_length, chunks_number, msg = await process_data(retriever, milvus_kb,
+                        status, content_length, chunks_number, msg = await process_data(milvus_kb,
                                                                                         mysql_client,
+                                                                                        es_client,
                                                                                         file_info, time_record)
 
                         insert_logger.info('time_record: ' + json.dumps(time_record, ensure_ascii=False))
