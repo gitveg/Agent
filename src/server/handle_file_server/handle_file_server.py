@@ -67,8 +67,8 @@ async def process_data(milvus_client: MilvusClient, mysql_client: MysqlClient, e
     msg = "success"
     chunks_number = 0
     mysql_client.update_file_msg(file_id, f'Processing:{random.randint(1, 5)}%')
-    # 这里是把文件做向量化，然后写入Milvus的逻辑
     start = time.perf_counter()
+    # 解析文件，提取文本
     try:
         await asyncio.wait_for(
             asyncio.to_thread(file_handler.split_file_to_docs),
@@ -100,7 +100,7 @@ async def process_data(milvus_client: MilvusClient, mysql_client: MysqlClient, e
     time_record['parse_time'] = round(end - start, 2)
     insert_logger.info(f'parse time: {end - start} {len(file_handler.docs)}')
     mysql_client.update_file_msg(file_id, f'Processing:{random.randint(5, 75)}%')
-
+    # 向量化并插入向量数据库
     try:
         start = time.perf_counter()
         file_handler.docs, full_docs,chunks_number, file_handler.embs = await asyncio.wait_for(
@@ -127,7 +127,7 @@ async def process_data(milvus_client: MilvusClient, mysql_client: MysqlClient, e
         time_record['insert_error'] = True
         msg = f"milvus insert error"
         return status, content_length, chunks_number, msg
-    
+    # 插入搜索引擎es
     if es_client is not None:
         try:
             # docs的doc_id是file_id + '_' + i 注意这里的docs_id指的是es数据库中的唯一标识
@@ -151,6 +151,7 @@ async def process_data(milvus_client: MilvusClient, mysql_client: MysqlClient, e
             time_record['insert_error'] = True
             msg = f"es_store insert error"
             return status, content_length, chunks_number, msg
+
 
     mysql_client.update_file_msg(file_id, f'Processing:{random.randint(75, 100)}%')
     time_record['upload_total_time'] = round(time.perf_counter() - process_start, 2)

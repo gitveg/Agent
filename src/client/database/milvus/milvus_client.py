@@ -8,8 +8,6 @@ from concurrent.futures import ThreadPoolExecutor
 from langchain.docstore.document import Document
 from typing import List
 
-from src.core.qa_handler import QAHandler
-
 # 获取当前脚本的绝对路径
 current_script_path = os.path.abspath(__file__)
 root_dir = os.path.dirname(current_script_path) # milvus
@@ -25,7 +23,7 @@ from src.utils.log_handler import debug_logger
 from src.utils.general_utils import get_time, cur_func_name
 from src.configs.configs import DEFAULT_PARENT_CHUNK_SIZE, MILVUS_HOST_LOCAL, MILVUS_PORT, VECTOR_SEARCH_TOP_K
 
-from src.client.embedding.embedding_client import SBIEmbeddings, _process_query, embed_user_input
+from src.client.embedding.embedding_client import SBIEmbeddings, embed_user_input
 
 
 class MilvusFailed(Exception):
@@ -44,6 +42,7 @@ class MilvusClient:
         self.top_k = VECTOR_SEARCH_TOP_K
         self.search_params = {"metric_type": "L2", "params": {"nprobe": 128}}
         self.create_params = {"metric_type": "L2", "index_type": "IVF_FLAT", "params": {"nlist": 1024}}
+        self.embeddings = SBIEmbeddings()
         # self.create_params = {"metric_type": "L2", "index_type": "GPU_IVF_FLAT", "params": {"nlist": 1024}}  # GPU版本
         try:
             connections.connect(host=self.host, 
@@ -225,17 +224,18 @@ class MilvusClient:
     def output_fields(self):
         return ['id', 'user_id', 'kb_id', 'file_id', 'headers', 'doc_id', 'content', 'embedding']
     
-    async def insert_documents(self, docs, user_id, qa_handler: QAHandler, file_handler: FileHandler, chunk_size=DEFAULT_PARENT_CHUNK_SIZE):
+    async def insert_documents(self, docs, user_id, file_handler: FileHandler, chunk_size=DEFAULT_PARENT_CHUNK_SIZE):
         split_docs, full_docs = FileHandler.split_docs(docs, chunk_size)
         parent_chunk_number = len(set(doc.metadata["doc_id"] for doc in docs)) # file_handler.docs 列表中每个元素 doc 的不重复的 doc.doc_id 数量
         # 将切分好的Document存入向量数据库中
         self.load_collection_(user_id)
         for doc in docs:
             # 这里应该能用列表直接把所有的给向量化
-            textvec = qa_handler.embeddings.embed_query(doc.page_content)
+            
+            textvec = self.embeddings.embed_query(doc.page_content)
             # print(textvec)
             file_handler.embs.append(textvec)
-            qa_handler.milvus_client.store_doc(doc, textvec)
+            self.store_doc(doc, textvec)
         return split_docs, full_docs, parent_chunk_number, file_handler.embs
     
     
