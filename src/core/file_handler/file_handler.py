@@ -41,11 +41,12 @@ class LocalFile:
             f.write(self.file_content)
 
 class FileHandler:
-    def __init__(self, user_id, kb_name,kb_id, file_id, file_location, file_name, chunk_size):
+    def __init__(self, user_id, kb_name,kb_id, file_id, file_location, file_name, file_url, chunk_size):
         self.chunk_size = chunk_size
         self.user_id = user_id
         self.kb_name = kb_name
         self.kb_id = kb_id
+        self.file_url = file_url
         self.file_id = file_id
         self.docs: List[Document] = []
         self.embs = []
@@ -69,7 +70,6 @@ class FileHandler:
                     continue
         return pre_page_id
 
-    @staticmethod
     def load_text(self):
         """
         加载文本文件。
@@ -196,7 +196,6 @@ class FileHandler:
 
     ## 文件内容加载与处理
 
-    @get_time
     def split_file_to_docs(self):
         """
         根据文件类型将文件内容加载为文档对象列表。

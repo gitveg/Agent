@@ -23,7 +23,7 @@ import time
 import argparse
 import webbrowser
 
-WorkerManager.THRESHOLD = 6000
+WorkerManager.THRESHOLD = 600
 
 # 接收外部参数mode
 parser = argparse.ArgumentParser()

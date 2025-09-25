@@ -43,7 +43,7 @@ sleep 2
 if ps -p $PID > /dev/null; then
     echo "服务启动成功！"
     echo "日志文件: $LOG_FILE"
-    echo "使用 './stop_sanic.sh' 停止服务"
+    echo "使用 './stop.sh' 停止服务"
 else
     echo "错误: 服务启动失败！"
     echo "请检查日志文件: $LOG_FILE"

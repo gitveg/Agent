@@ -45,7 +45,7 @@ app = Sanic("InsertFileService")
 # 数据库配置
 db_config = {
     'host': MYSQL_HOST_LOCAL,
-    'port': MYSQL_PORT_LOCAL,
+    'port': int(MYSQL_PORT_LOCAL),
     'user': MYSQL_USER_LOCAL,
     'password': MYSQL_PASSWORD_LOCAL,
     'db': MYSQL_DATABASE_LOCAL,
@@ -63,7 +63,8 @@ async def process_data(milvus_client: MilvusClient, mysql_client: MysqlClient, e
     # 获取格式为'2021-08-01 00:00:00'的时间戳
     insert_timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
     mysql_client.update_knowlegde_base_latest_insert_time(kb_id, insert_timestamp)
-    file_handler = FileHandler(user_id, kb_id, file_id, file_location, file_name, file_url, chunk_size, mysql_client)
+    kb_name = mysql_client.get_knowledge_base_name(kb_id)
+    file_handler = FileHandler(user_id, kb_name, kb_id, file_id, file_location, file_name, file_url, chunk_size)
     msg = "success"
     chunks_number = 0
     mysql_client.update_file_msg(file_id, f'Processing:{random.randint(1, 5)}%')
@@ -104,7 +105,7 @@ async def process_data(milvus_client: MilvusClient, mysql_client: MysqlClient, e
     try:
         start = time.perf_counter()
         file_handler.docs, full_docs,chunks_number, file_handler.embs = await asyncio.wait_for(
-            milvus_client.insert_documents(file_handler.docs, chunk_size),
+            milvus_client.insert_documents(user_id, file_handler, chunk_size),
             timeout=insert_timeout_seconds)
         # TODO: 后续有需要加上计时
         # insert_time = time.perf_counter()

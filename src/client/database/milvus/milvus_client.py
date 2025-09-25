@@ -7,7 +7,6 @@ from pymilvus import connections, FieldSchema, CollectionSchema, DataType,\
 from concurrent.futures import ThreadPoolExecutor
 from langchain.docstore.document import Document
 from typing import List
-
 # 获取当前脚本的绝对路径
 current_script_path = os.path.abspath(__file__)
 root_dir = os.path.dirname(current_script_path) # milvus
@@ -19,7 +18,7 @@ root_dir = os.path.dirname(root_dir)
 sys.path.append(root_dir)
 
 from src.core.file_handler.file_handler import FileHandler
-from src.utils.log_handler import debug_logger
+from src.utils.log_handler import debug_logger, insert_logger
 from src.utils.general_utils import get_time, cur_func_name
 from src.configs.configs import DEFAULT_PARENT_CHUNK_SIZE, MILVUS_HOST_LOCAL, MILVUS_PORT, VECTOR_SEARCH_TOP_K
 
@@ -224,19 +223,20 @@ class MilvusClient:
     def output_fields(self):
         return ['id', 'user_id', 'kb_id', 'file_id', 'headers', 'doc_id', 'content', 'embedding']
     
-    async def insert_documents(self, docs, user_id, file_handler: FileHandler, chunk_size=DEFAULT_PARENT_CHUNK_SIZE):
-        split_docs, full_docs = FileHandler.split_docs(docs, chunk_size)
-        parent_chunk_number = len(set(doc.metadata["doc_id"] for doc in docs)) # file_handler.docs 列表中每个元素 doc 的不重复的 doc.doc_id 数量
+    async def insert_documents(self, user_id, file_handler: FileHandler, chunk_size=DEFAULT_PARENT_CHUNK_SIZE):
+        # insert_logger.info(f"{file_handler.docs}")
+        file_handler.docs, full_docs = FileHandler.split_docs(file_handler.docs, chunk_size)
+        # insert_logger.info(f"split_docs  = {file_handler.docs}")
+        parent_chunk_number = len(set(doc.metadata["doc_id"] for doc in file_handler.docs)) # file_handler.docs 列表中每个元素 doc 的不重复的 doc.doc_id 数量
         # 将切分好的Document存入向量数据库中
         self.load_collection_(user_id)
-        for doc in docs:
+        for doc in file_handler.docs:
             # 这里应该能用列表直接把所有的给向量化
-            
             textvec = self.embeddings.embed_query(doc.page_content)
             # print(textvec)
             file_handler.embs.append(textvec)
             self.store_doc(doc, textvec)
-        return split_docs, full_docs, parent_chunk_number, file_handler.embs
+        return file_handler.docs, full_docs, parent_chunk_number, file_handler.embs
     
     
 

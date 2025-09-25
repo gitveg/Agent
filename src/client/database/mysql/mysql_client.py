@@ -384,7 +384,7 @@ class MysqlClient:
     
     # [文件] 向指定知识库下面增加文件
     def add_file(self, file_id, user_id, kb_id, file_name, file_size, file_location, chunk_size, timestamp, file_url='',
-                 status="green"):
+                 status="gray"):
         query = ("INSERT INTO File (file_id, user_id, kb_id, file_name, status, file_size, file_location, chunk_size, "
                  "timestamp, file_url) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)")
         self.execute_query_(query,
@@ -434,3 +434,7 @@ class MysqlClient:
         upload_infos = json.dumps(upload_infos, ensure_ascii=False)
         query = "UPDATE File SET upload_infos = %s WHERE file_id = %s"
         self.execute_query_(query, (upload_infos, file_id), commit=True)
+        
+    def update_knowlegde_base_latest_insert_time(self, kb_id, timestamp):
+        query = "UPDATE KnowledgeBase SET latest_insert_time = %s WHERE kb_id = %s"
+        self.execute_query_(query, (timestamp, kb_id), commit=True)

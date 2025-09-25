@@ -85,7 +85,7 @@ class QAHandler:
         self.mysql_client = MysqlClient()
         self.milvus_client = MilvusClient()
         self.es_client = ESClient()
-        self.retriever = Retriever()
+        self.retriever = Retriever(self.milvus_client, self.mysql_client, self.es_client)
         # 初始化query_rewrite pipeline
         if QUERY_REWRITE_ENABLED:
             self.query_rewrite_pipeline = QueryRewritePipeline()

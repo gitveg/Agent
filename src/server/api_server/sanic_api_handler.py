@@ -221,47 +221,47 @@ async def upload_files(req: request):
         msg = qa_handler.mysql_client.add_file(file_id, user_id, kb_id, file_name, file_size, file_location,
                                                    chunk_size, timestamp)
         debug_logger.info(f"{file_name}, {file_id}, {msg}")
-        # 将文件切割向量化并保存到向量数据库中
-        kb_name = qa_handler.mysql_client.get_knowledge_base_name([local_file.kb_id])[0][2]
-        file_handler = FileHandler(local_file.user_id, kb_name, local_file.kb_id, 
-                                         local_file.file_id, local_file.file_location, 
-                                         local_file.file_name, chunk_size)
-        # txt
-        # 将文件转换为Document类型，langchain
-        file_handler.split_file_to_docs() # Document类
-        # print(file_handler.docs)
-        # 将处理好的Document中内容进行切分 切父块800 没重叠  切子块400 重叠部分100
-        file_handler.docs, full_docs = FileHandler.split_docs(file_handler.docs)
-        parent_chunk_number = len(set(doc.metadata["doc_id"] for doc in file_handler.docs)) # file_handler.docs 列表中每个元素 doc 的不重复的 doc.doc_id 数量
-        # 将切分好的Document存入向量数据库中
-        qa_handler.milvus_client.load_collection_(user_id)
-        for doc in file_handler.docs:
-            # 这里应该能用列表直接把所有的给向量化
-            textvec = qa_handler.embeddings.embed_query(doc.page_content)
-            # print(textvec)
-            file_handler.embs.append(textvec)
-            qa_handler.milvus_client.store_doc(doc, textvec)
-        # 打印切好的子块
-        # print(file_handler.docs)
-        # 将切分好的子块存入es数据库中
-        if qa_handler.es_client is not None:
-            try:
-                # docs的doc_id是file_id + '_' + i 注意这里的docs_id指的是es数据库中的唯一标识
-                # 而不是父块编号
-                docs_ids = [doc.metadata['file_id'] + '_' + str(i) for i, doc in enumerate(file_handler.docs)]
-                # ids指定文档的唯一标识符
-                es_res = await qa_handler.es_client.es_store.aadd_documents(file_handler.docs, ids=docs_ids)
-                debug_logger.info(f'es_store insert number: {len(es_res)}, {es_res[0]}')
-            except Exception as e:
-                debug_logger.error(f"Error in aadd_documents on es_store: {traceback.format_exc()}")
-        # 存入完以后更新mysql中file表的chunks_number
-        # 将切好的父doc存入mysql数据库中
-        qa_handler.mysql_client.store_parent_chunks(full_docs)
-        # 更新文件的chunk number
-        qa_handler.mysql_client.modify_file_chunks_number(file_id, user_id, kb_id, parent_chunk_number)
-        # 返回给前端的数据
-        data.append({"file_id": file_id, "file_name": file_name, "status": "green", 
-                     "bytes": len(local_file.file_content), "timestamp": timestamp, "estimated_chars": chars})
+        # # 将文件切割向量化并保存到向量数据库中
+        # kb_name = qa_handler.mysql_client.get_knowledge_base_name([local_file.kb_id])[0][2]
+        # file_handler = FileHandler(local_file.user_id, kb_name, local_file.kb_id, 
+        #                                  local_file.file_id, local_file.file_location, 
+        #                                  local_file.file_name, chunk_size)
+        # # txt
+        # # 将文件转换为Document类型，langchain
+        # file_handler.split_file_to_docs() # Document类
+        # # print(file_handler.docs)
+        # # 将处理好的Document中内容进行切分 切父块800 没重叠  切子块400 重叠部分100
+        # file_handler.docs, full_docs = FileHandler.split_docs(file_handler.docs)
+        # parent_chunk_number = len(set(doc.metadata["doc_id"] for doc in file_handler.docs)) # file_handler.docs 列表中每个元素 doc 的不重复的 doc.doc_id 数量
+        # # 将切分好的Document存入向量数据库中
+        # qa_handler.milvus_client.load_collection_(user_id)
+        # for doc in file_handler.docs:
+        #     # 这里应该能用列表直接把所有的给向量化
+        #     textvec = qa_handler.embeddings.embed_query(doc.page_content)
+        #     # print(textvec)
+        #     file_handler.embs.append(textvec)
+        #     qa_handler.milvus_client.store_doc(doc, textvec)
+        # # 打印切好的子块
+        # # print(file_handler.docs)
+        # # 将切分好的子块存入es数据库中
+        # if qa_handler.es_client is not None:
+        #     try:
+        #         # docs的doc_id是file_id + '_' + i 注意这里的docs_id指的是es数据库中的唯一标识
+        #         # 而不是父块编号
+        #         docs_ids = [doc.metadata['file_id'] + '_' + str(i) for i, doc in enumerate(file_handler.docs)]
+        #         # ids指定文档的唯一标识符
+        #         es_res = await qa_handler.es_client.es_store.aadd_documents(file_handler.docs, ids=docs_ids)
+        #         debug_logger.info(f'es_store insert number: {len(es_res)}, {es_res[0]}')
+        #     except Exception as e:
+        #         debug_logger.error(f"Error in aadd_documents on es_store: {traceback.format_exc()}")
+        # # 存入完以后更新mysql中file表的chunks_number
+        # # 将切好的父doc存入mysql数据库中
+        # qa_handler.mysql_client.store_parent_chunks(full_docs)
+        # # 更新文件的chunk number
+        # qa_handler.mysql_client.modify_file_chunks_number(file_id, user_id, kb_id, parent_chunk_number)
+        # # 返回给前端的数据
+        # data.append({"file_id": file_id, "file_name": file_name, "status": "green", 
+        #              "bytes": len(local_file.file_content), "timestamp": timestamp, "estimated_chars": chars})
     if failed_files:
         msg = f"warning, {failed_files} chars is too much, max characters length is {MAX_CHARS}, skip upload."
     elif record_exist_files:
