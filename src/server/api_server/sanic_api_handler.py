@@ -8,9 +8,9 @@ import time
 import traceback
 import urllib
 
-import tqdm
-# 获取当前脚本的绝对路径
+from tqdm import tqdm
 current_script_path = os.path.abspath(__file__)
+# 获取当前脚本的绝对路径
 
 current_dir = os.path.dirname(current_script_path)
 
@@ -292,7 +292,7 @@ async def local_doc_chat(req: request):
     custom_prompt = safe_get(req, 'custom_prompt', None)
     rerank = safe_get(req, 'rerank', default=True)
     only_need_search_results = safe_get(req, 'only_need_search_results', False)
-    need_web_search = safe_get(req, 'networking', False)
+    # need_web_search = safe_get(req, 'networking', False)
     api_base = safe_get(req, 'api_base', DEFAULT_API_BASE)
     # 如果api_base中包含0.0.0.0或127.0.0.1或localhost，替换为GATEWAY_IP
     api_base = api_base.replace('0.0.0.0', GATEWAY_IP).replace('127.0.0.1', GATEWAY_IP).replace('localhost',
@@ -356,7 +356,6 @@ async def local_doc_chat(req: request):
     debug_logger.info("max_token: %s", max_token)
     debug_logger.info("request_source: %s", request_source)
     debug_logger.info("only_need_search_results: %s", only_need_search_results)
-    debug_logger.info("need_web_search: %s", need_web_search)
     debug_logger.info("api_base: %s", api_base)
     debug_logger.info("api_key: %s", api_key)
     debug_logger.info("api_context_length: %s", api_context_length)
@@ -406,7 +405,7 @@ async def local_doc_chat(req: request):
                                                                                     rerank=rerank,
                                                                                     custom_prompt=custom_prompt,
                                                                                     time_record=time_record,
-                                                                                    need_web_search=need_web_search,
+                                                                                    # need_web_search=need_web_search,
                                                                                     hybrid_search=hybrid_search,
                                                                                     web_chunk_size=chunk_size,
                                                                                     temperature=temperature,
@@ -486,7 +485,7 @@ async def local_doc_chat(req: request):
                                                                            custom_prompt=custom_prompt,
                                                                            time_record=time_record,
                                                                            only_need_search_results=only_need_search_results,
-                                                                           need_web_search=need_web_search,
+                                                                        #    need_web_search=need_web_search,
                                                                            hybrid_search=hybrid_search,
                                                                            web_chunk_size=chunk_size,
                                                                            temperature=temperature,
@@ -541,7 +540,7 @@ async def upload_faqs(req: request):
     debug_logger.info("upload_faqs %s", user_id)
     debug_logger.info("user_info %s", user_info)
     kb_id = safe_get(req, 'kb_id')
-    kb_id = correct_kb_id(kb_id)
+    # kb_id = correct_kb_id(kb_id)
     debug_logger.info("kb_id %s", kb_id)
     faqs = safe_get(req, 'faqs')
     chunk_size = safe_get(req, 'chunk_size', default=DEFAULT_PARENT_CHUNK_SIZE)
@@ -562,6 +561,7 @@ async def upload_faqs(req: request):
             debug_logger.info('cleaned name: %s', file_name)
             file_name = truncate_filename(file_name)
             file_faqs = check_and_transform_excel(file.body)
+            debug_logger.info(f"{file_name} faqs: {file_faqs}")
             if isinstance(file_faqs, str):
                 file_status[file_name] = file_faqs
             else:
@@ -590,17 +590,6 @@ async def upload_faqs(req: request):
         file_name = file_name.replace("/", "_").replace(":", "_")  # 文件名中的/和：会导致写入时出错
         file_name = simplify_filename(file_name)
         file_size = len(ques) + len(faq['answer'])
-        # faq_id = local_doc_qa.milvus_summary.get_faq_by_question(ques, kb_id)
-        # if faq_id:
-        #     debug_logger.info(f"faq question {ques} already exist, skip")
-        #     data.append({
-        #         "file_id": faq_id,
-        #         "file_name": file_name,
-        #         "status": "green",
-        #         "length": file_size,
-        #         "timestamp": local_doc_qa.milvus_summary.get_file_timestamp(faq_id)
-        #     })
-        #     continue
         local_file = LocalFile(user_id, kb_id, faq, file_name)
         file_id = local_file.file_id
         file_location = local_file.file_location
