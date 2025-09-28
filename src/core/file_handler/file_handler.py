@@ -23,25 +23,45 @@ import threading
 import re
 import traceback
 from sanic.request import File
+from typing import Union, Tuple, Dict
 import chardet
 
 # TODO同名文件直接覆盖
 class LocalFile:
-    def __init__(self, user_id, kb_id, file: File, file_name):
+    def __init__(self, user_id, kb_id, file, file_name):
         self.user_id = user_id
         self.kb_id = kb_id
         self.file_name = file_name
         self.file_id = uuid.uuid4().hex
-        self.file_content = file.body
-        upload_path = os.path.join(UPLOAD_ROOT_PATH, user_id)
-        file_dir = os.path.join(upload_path, self.kb_id)
-        os.makedirs(file_dir, exist_ok=True)
-        self.file_location = os.path.join(file_dir, self.file_name)
-        with open(self.file_location, 'wb') as f:
-            f.write(self.file_content)
+        self.file_url = ""
+        if isinstance(file, Dict):
+            self.file_location = "FAQ"
+            self.file_content = b''
+        elif isinstance(file, str):
+            self.file_location = "URL"
+            self.file_content = b''
+            self.file_url = file
+        else:
+            self.file_content = file.body
+            # nos_key = construct_nos_key_for_local_file(user_id, kb_id, self.file_id, self.file_name)
+            # debug_logger.info(f'file nos_key: {self.file_id}, {self.file_name}, {nos_key}')
+            # self.file_location = nos_key
+            # upload_res = upload_nos_file_bytes_or_str_retry(nos_key, self.file_content)
+            # if 'failed' in upload_res:
+            #     debug_logger.error(f'failed init localfile {self.file_name}, {upload_res}')
+            # else:
+            #     debug_logger.info(f'success init localfile {self.file_name}, {upload_res}')
+            upload_path = os.path.join(UPLOAD_ROOT_PATH, user_id)
+            file_dir = os.path.join(upload_path, self.kb_id, self.file_id)
+            os.makedirs(file_dir, exist_ok=True)
+            self.file_location = os.path.join(file_dir, self.file_name)
+            #  如果文件不存在：
+            if not os.path.exists(self.file_location):
+                with open(self.file_location, 'wb') as f:
+                    f.write(self.file_content)
 
 class FileHandler:
-    def __init__(self, user_id, kb_name,kb_id, file_id, file_location, file_name, file_url, chunk_size):
+    def __init__(self, user_id, kb_name,kb_id, file_id, file_location, file_name, file_url, chunk_size, mysql_client):
         self.chunk_size = chunk_size
         self.user_id = user_id
         self.kb_name = kb_name
@@ -54,7 +74,12 @@ class FileHandler:
         self.file_location = file_location
         self.file_path = ""
         self.file_path = self.file_location
+        self.mysql_client = mysql_client
         self.event = threading.Event()
+        if self.file_location == 'FAQ':
+            faq_info = self.mysql_client.get_faq(self.file_id)
+            user_id, kb_id, question, answer, nos_keys = faq_info
+            self.faq_dict = {'question': question, 'answer': answer, 'nos_keys': nos_keys}
 
 
     @staticmethod
@@ -200,12 +225,13 @@ class FileHandler:
         """
         根据文件类型将文件内容加载为文档对象列表。
         """
-        print(f"self.file_path: {self.file_path}\n")
-        docs = []
+        insert_logger.info(f"start split file to docs, file_path: {self.file_name}")
 
         # 根据文件扩展名处理文件
         file_extension = self.file_path.lower()
-        if file_extension.endswith(".txt"):
+        if self.faq_dict:
+            docs = [Document(page_content=self.faq_dict['question'], metadata={"faq_dict": self.faq_dict})]
+        elif file_extension.endswith(".txt"):
             docs = self.load_text()
         elif file_extension.endswith(".pdf"):
             docs = self.load_pdf()

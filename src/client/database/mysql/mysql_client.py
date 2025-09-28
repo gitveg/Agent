@@ -396,7 +396,7 @@ class MysqlClient:
         query = ("UPDATE File SET chunks_number = %s WHERE file_id = %s AND user_id = %s AND kb_id = %s")
         self.execute_query_(query, (chunks_number, file_id, user_id, kb_id), commit=True)
 
-    def store_parent_chunks(self, docs):
+    def store_parent_chunks(self, docs): 
         query = """
             INSERT INTO Documents (doc_id, json_data)
             VALUES (%s, %s)
@@ -438,3 +438,22 @@ class MysqlClient:
     def update_knowlegde_base_latest_insert_time(self, kb_id, timestamp):
         query = "UPDATE KnowledgeBase SET latest_insert_time = %s WHERE kb_id = %s"
         self.execute_query_(query, (timestamp, kb_id), commit=True)
+        
+    
+    def get_faq(self, faq_id) -> tuple:
+        query = "SELECT user_id, kb_id, question, answer, nos_keys FROM Faqs WHERE faq_id = %s"
+        faq_all = self.execute_query_(query, (faq_id,), fetch=True)
+        if faq_all:
+            faq = faq_all[0]
+            debug_logger.info(f"get_faq: faq_id: {faq_id}, mysql res: {faq}")
+            return faq
+        else:
+            debug_logger.error(f"get_faq: faq_id: {faq_id} not found")
+            return None
+    def get_files_name_by_id(self, file_id):
+        query = "SELECT file_name FROM File WHERE file_id = %s"
+        result = self.execute_query_(query, (file_id,), fetch=True)
+        if result:
+            return result[0][0]
+        else:
+            return ""

@@ -456,28 +456,27 @@ class QAHandler:
 
         # es检索+milvus检索结果最多可能是2k
         source_documents = source_documents[:top_k]
-        my_print(source_documents)
         # TODO:
         # rerank之后删除headers，只保留文本内容，用于后续处理
         # TODO: 不知道这个在rerank里什么作用
         # for doc in source_documents:
         #     doc.page_content = re.sub(r'^\[headers]\(.*?\)\n', '', doc.page_content)
 
-        # 这里是处理FAQ的逻辑，后续在开发 TODO
         high_score_faq_documents = [doc for doc in source_documents if
-                                    doc.metadata['file_name'].endswith('.faq') and doc.metadata['score'] >= 0.9]
+            self.mysql_client.get_files_name_by_id(doc.metadata['file_id']).endswith('.faq') and doc.metadata['score'] >= 0.9]
         if high_score_faq_documents:
             source_documents = high_score_faq_documents
         # # FAQ完全匹配处理逻辑
         for doc in source_documents:
-            if doc.metadata['file_name'].endswith('.faq') and clear_string_is_equal(
-                    doc.metadata['faq_dict']['question'], query):
-                debug_logger.info(f"match faq question: {query}")
+            debug_logger.info(f'source doc info: {doc.metadata}')
+            if  self.mysql_client.get_files_name_by_id(doc.metadata['file_id']).endswith('.faq'):
+                debug_logger.info(f"match faq question: {query} score: {doc.metadata['score']}")
                 if only_need_search_results:
                     yield source_documents, None
                     return
-                res = doc.metadata['faq_dict']['answer']
-                async for response, history in self.generate_response(query, res, condense_question, source_documents,
+                # TODO 这里得看一下原来的逻辑是放在哪里进行处理faq_dict和name的
+                _, _, question, answer, _ = self.mysql_client.get_faq(doc.metadata['file_id'])
+                async for response, history in self.generate_response(question, answer, condense_question, source_documents,
                                                                       time_record, chat_history, streaming, 'MATCH_FAQ'):
                     yield response, history
                 return

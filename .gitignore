@@ -13,3 +13,4 @@ test_results_short.json
 test_results.json
 test_results*
 test_questions*
+*.pid

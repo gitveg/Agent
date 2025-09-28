@@ -64,7 +64,7 @@ async def process_data(milvus_client: MilvusClient, mysql_client: MysqlClient, e
     insert_timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
     mysql_client.update_knowlegde_base_latest_insert_time(kb_id, insert_timestamp)
     kb_name = mysql_client.get_knowledge_base_name(kb_id)
-    file_handler = FileHandler(user_id, kb_name, kb_id, file_id, file_location, file_name, file_url, chunk_size)
+    file_handler = FileHandler(user_id, kb_name, kb_id, file_id, file_location, file_name, file_url, chunk_size, mysql_client)
     msg = "success"
     chunks_number = 0
     mysql_client.update_file_msg(file_id, f'Processing:{random.randint(1, 5)}%')

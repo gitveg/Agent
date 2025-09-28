@@ -1,7 +1,7 @@
 from io import BytesIO
 import time
 from functools import wraps
-from turtle import pd
+import pandas as pd
 
 import tiktoken  # 添加这行导入
 from src.utils.log_handler import debug_logger, embed_logger, rerank_logger
