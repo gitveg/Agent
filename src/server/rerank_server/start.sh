@@ -37,13 +37,13 @@ sleep 20
 # 检查端口并更新PID文件
 PORT_PID=$(lsof -ti :8001)
 if [ ! -z "$PORT_PID" ]; then
-    echo $PORT_PID > embedding.pid
-    echo "✓ Embedding service started successfully"
+    echo $PORT_PID > rerank.pid
+    echo "✓ Rerank service started successfully"
     echo "✓ Service is running on port 9001 (PID: $PORT_PID)"
     echo "✓ Log file: record.log"
-    echo "✓ PID file: embedding.pid"
+    echo "✓ PID file: rerank.pid"
 else
-    echo "✗ Failed to start embedding service"
+    echo "✗ Failed to start rerank service"
     echo "Check the log file for errors: record.log"
     exit 1
 fi
