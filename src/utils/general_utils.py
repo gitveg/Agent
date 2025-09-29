@@ -174,19 +174,6 @@ def check_and_transform_excel(binary_data):
 
     return transformed_data
 
-def correct_kb_id(kb_id):
-    if not kb_id:
-        return kb_id
-    # 如果kb_id末尾不是KB_SUFFIX,则加上
-    if KB_SUFFIX not in kb_id:
-        # 判断有FAQ的时候
-        if kb_id.endswith('_FAQ'):  # KBc86eaa3f278f4ef9908780e8e558c6eb_FAQ
-            return kb_id.split('_FAQ')[0] + KB_SUFFIX + '_FAQ'
-        else:  # KBc86eaa3f278f4ef9908780e8e558c6eb
-            return kb_id + KB_SUFFIX
-    else:
-        return kb_id
-
 def check_user_id_and_user_info(user_id, user_info):
     if user_id is None or user_info is None:
         msg = "fail, user_id 或 user_info 为 None"

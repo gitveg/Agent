@@ -23,7 +23,7 @@ root_dir = os.path.dirname(root_dir)
 # 将项目根目录添加到sys.path
 sys.path.append(root_dir)
 from src.utils.general_utils import check_and_transform_excel, get_time, get_time_async, \
-    safe_get, check_user_id_and_user_info, correct_kb_id, \
+    safe_get, check_user_id_and_user_info, \
         check_filename, simplify_filename, truncate_filename
 from src.core.qa_handler import QAHandler
 from src.utils.log_handler import debug_logger
@@ -560,13 +560,21 @@ async def upload_faqs(req: request):
             file_name = file_name.replace("/", "_")
             debug_logger.info('cleaned name: %s', file_name)
             file_name = truncate_filename(file_name)
+            # check_and_transform_excel is expected to return either:
+            # - a list (on success), or
+            # - a string (on error)
             file_faqs = check_and_transform_excel(file.body)
             debug_logger.info(f"{file_name} faqs: {file_faqs}")
             if isinstance(file_faqs, str):
                 file_status[file_name] = file_faqs
-            else:
+            elif isinstance(file_faqs, list):
                 faqs.extend(file_faqs)
                 file_status[file_name] = "success"
+            else:
+                # Unexpected return type: log error and skip this file
+                error_msg = f"Unexpected return type from check_and_transform_excel: {type(file_faqs)}"
+                debug_logger.error(error_msg)
+                file_status[file_name] = error_msg
 
     if len(faqs) > 1000:
         return sanic_json({"code": 2002, "msg": f"fail, faqs too many, max length is 1000."})

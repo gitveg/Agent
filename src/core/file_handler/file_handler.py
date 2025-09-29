@@ -229,7 +229,7 @@ class FileHandler:
 
         # 根据文件扩展名处理文件
         file_extension = self.file_path.lower()
-        if self.faq_dict:
+        if hasattr(self, 'faq_dict') and self.faq_dict:
             docs = [Document(page_content=self.faq_dict['question'], metadata={"faq_dict": self.faq_dict})]
         elif file_extension.endswith(".txt"):
             docs = self.load_text()

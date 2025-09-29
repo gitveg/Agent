@@ -163,8 +163,17 @@ async def process_data(milvus_client: MilvusClient, mysql_client: MysqlClient, e
 
 
 async def check_and_process(pool):
-    process_type = 'MainProcess' if 'SANIC_WORKER_NAME' not in os.environ else os.environ['SANIC_WORKER_NAME']
-    worker_id = int(process_type.split('-')[-2])
+    if 'SANIC_WORKER_NAME' in os.environ:
+        process_type = os.environ['SANIC_WORKER_NAME']
+        try:
+            worker_id = int(process_type.split('-')[-2])
+        except (IndexError, ValueError):
+            worker_id = 0
+            insert_logger.warning(f"Could not parse worker_id from SANIC_WORKER_NAME='{process_type}', defaulting to 0")
+    else:
+        process_type = 'MainProcess'
+        worker_id = 0
+        insert_logger.info("SANIC_WORKER_NAME not found, running in MainProcess, worker_id set to 0")
     insert_logger.info(f"{os.getpid()} worker_id is {worker_id}")
     mysql_client = MysqlClient()
     milvus_kb = MilvusClient()

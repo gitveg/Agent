@@ -32,10 +32,6 @@ root_dir = os.path.dirname(os.path.dirname(
     os.path.dirname(current_script_path)))
 sys.path.append(root_dir)
 
-def clear_string_is_equal(str1, str2):
-    raise NotImplementedError
-
-
 class QAHandler:
     def __init__(self, port):
         self.port = port
