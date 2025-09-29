@@ -522,9 +522,36 @@ async def local_doc_chat(req: request):
 
 @get_time_async
 async def list_kbs(req: request):
-    """
-    Placeholder: This function is intended to list all knowledge bases for a given user.
-    The actual implementation for querying the database and returning the list
-    needs to be added here.
-    """
-    return sanic_json({"code": 200, "msg": "success", "data": []})
+    qa_handler: QAHandler = req.app.ctx.qa_handler
+    user_id = safe_get(req, 'user_id')
+    user_info = safe_get(req, 'user_info', "1234")
+
+    # 1. 校验 user_id 和 user_info
+    passed, msg = check_user_id_and_user_info(user_id, user_info)
+    if not passed:
+        return sanic_json({"code": 2001, "msg": msg})
+    user_id = user_id + '__' + user_info
+    debug_logger.info("list_kbs %s", user_id)
+
+    try:
+        # 2. 调用 MysqlClient 的新方法获取知识库列表
+        all_kbs_raw = qa_handler.mysql_client.get_all_knowledge_bases_for_user(
+            user_id)  # 新增的方法
+
+        # 3. 格式化返回数据
+        kb_list = []
+        if all_kbs_raw:
+            for kb_id, _, kb_name, latest_qa_time, latest_insert_time in all_kbs_raw:
+                kb_list.append({
+                    "kb_id": kb_id,
+                    "kb_name": kb_name,
+                    "latest_qa_time": latest_qa_time.strftime("%Y-%m-%d %H:%M:%S") if latest_qa_time else None,
+                    "latest_insert_time": latest_insert_time.strftime("%Y-%m-%d %H:%M:%S") if latest_insert_time else None
+                })
+
+        return sanic_json({"code": 200, "msg": "success", "data": kb_list})
+
+    except Exception as e:
+        debug_logger.error(
+            f"Error listing knowledge bases for {user_id}: {traceback.format_exc()}")
+        return sanic_json({"code": 5000, "msg": f"An error occurred: {str(e)}"})
