@@ -129,7 +129,7 @@ async def test_upload_files(file_path: str):
             # 添加其他字段
             form_data.add_field('user_id', 'abc1234')
             form_data.add_field('user_info', '5678')
-            form_data.add_field('kb_id', 'KB2ed627becda34af0a85cb1d104d90ebb')
+            form_data.add_field('kb_id', 'KBbf9488a498cf4407a6abdf477208c3ed')
             form_data.add_field('mode', 'soft')
 
             # 发送请求
@@ -153,8 +153,8 @@ async def test_local_doc_chat():
                 "user_id": "abc1234",
                 "max_token": 3000,
                 "user_info": "5678",
-                "kb_ids": ["KB02b6b16ef5f64432876601b99831ab68"],  # 替换为实际的知识库ID
-                "question": "请问这个知识库的主要内容是什么？",
+                "kb_ids": ["KBbf9488a498cf4407a6abdf477208c3ed"],  # 替换为实际的知识库ID
+                "question": "zzh是谁?",
                 "history": [],
                 "streaming": False,  # 设置为False以获取完整回答
                 "rerank": True,
@@ -199,14 +199,101 @@ async def test_list_kbs():
             print(data)
         except Exception as e:
             logging.error(f"Request to list_kbs failed: {str(e)}")
+            
+async def test_upload_faqs_json():
+    async with AsyncHTTPClient(retries=3, timeout=20) as client:
+        try:
+            # 方法一：通过JSON发送FAQ数据
+            payload = {
+                "user_id": "abc1234",
+                "user_info": "5678",
+                "kb_id": "KBbf9488a498cf4407a6abdf477208c3ed",
+                "chunk_size": 800,
+                "faqs": [
+                    {
+                        "question": "什么是人工智能?",
+                        "answer": "人工智能是计算机科学的一个分支，致力于创造能够模拟人类智能的系统和程序。"
+                    },
+                    {
+                        "question": "机器学习的基本原理是什么?",
+                        "answer": "机器学习是通过算法使计算机从数据中学习并做出预测或决策，而无需明确编程。它通常依赖于统计模型和大量数据。"
+                    }
+                ]
+            }
+            
+            data = await client.request(
+                'POST',
+                'http://127.0.0.1:8777/api/local_doc_qa/upload_faqs',
+                json=payload,
+                headers={'Content-Type': 'application/json'}
+            )
+            print("Upload FAQs Response (JSON):")
+            print(data)
+            
+            # 创建FormData对象
+            form = aiohttp.FormData()
+            form.add_field('user_id', 'abc1234')
+            form.add_field('user_info', '5678')
+            form.add_field('kb_id', 'KBbf9488a498cf4407a6abdf477208c3ed')
+            form.add_field('chunk_size', '800')
+            # 预先读取文件内容
+            with open('./faqs.xlsx', 'rb') as f:
+                file_data = f.read()
+            form.add_field('files', 
+                            file_data,
+                            filename='faqs.xlsx',
+                            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            
+            # 使用aiohttp.ClientSession直接发送请求
+            async with aiohttp.ClientSession() as session:
+                async with session.post('http://127.0.0.1:8777/api/local_doc_qa/upload_faqs', 
+                                       data=form) as response:
+                    file_response = await response.json()
+                    print("\nUpload FAQs Response (File):")
+                    print(file_response)
+            
+        except Exception as e:
+            logging.error(f"Request to upload_faqs failed: {str(e)}")
+            
+            
+async def test_upload_faqs_file():
+    async with AsyncHTTPClient(retries=3, timeout=20) as client:
+        try:
+            
+            # 创建FormData对象
+            form = aiohttp.FormData()
+            form.add_field('user_id', 'abc1234')
+            form.add_field('user_info', '5678')
+            form.add_field('kb_id', 'KBbf9488a498cf4407a6abdf477208c3ed')
+            form.add_field('chunk_size', '800')
+            # 预先读取文件内容
+            with open('./faqs.xlsx', 'rb') as f:
+                file_data = f.read()
+            form.add_field('files', 
+                            file_data,
+                            filename='faqs.xlsx',
+                            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            
+            # 使用aiohttp.ClientSession直接发送请求
+            async with aiohttp.ClientSession() as session:
+                async with session.post('http://127.0.0.1:8777/api/local_doc_qa/upload_faqs', 
+                                       data=form) as response:
+                    file_response = await response.json()
+                    print("\nUpload FAQs Response (File):")
+                    print(file_response)
+            
+        except Exception as e:
+            logging.error(f"Request to upload_faqs failed: {str(e)}")
 
 def run_test():    
     # asyncio.run(test_document())
     # asyncio.run(test_health_check())
     # asyncio.run(test_new_knowledge_base())
-    # asyncio.run(test_upload_files('./这是一个测试文件.txt'))
+    # asyncio.run(test_upload_files('./这是一个测试文件2.txt'))
     asyncio.run(test_local_doc_chat())
     # asyncio.run(test_list_kbs())
+    # asyncio.run(test_upload_faqs_json())
+    # asyncio.run(test_upload_faqs_file())
 
 # asyncio.run(test_upload_files('./这是一个测试文件.txt'))
 

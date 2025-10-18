@@ -7,8 +7,10 @@ import os
 import time
 import traceback
 import urllib
-# 获取当前脚本的绝对路径
+
+from tqdm import tqdm
 current_script_path = os.path.abspath(__file__)
+# 获取当前脚本的绝对路径
 
 current_dir = os.path.dirname(current_script_path)
 
@@ -20,9 +22,9 @@ root_dir = os.path.dirname(root_dir)
 
 # 将项目根目录添加到sys.path
 sys.path.append(root_dir)
-from src.utils.general_utils import get_time, get_time_async, \
-    safe_get, check_user_id_and_user_info, correct_kb_id, \
-        check_filename
+from src.utils.general_utils import check_and_transform_excel, get_time, get_time_async, \
+    safe_get, check_user_id_and_user_info, \
+        check_filename, simplify_filename, truncate_filename
 from src.core.qa_handler import QAHandler
 from src.utils.log_handler import debug_logger
 from src.utils.general_utils import  fast_estimate_file_char_count
@@ -204,7 +206,7 @@ async def upload_files(req: request):
             continue
         # 将文件保存到本地
         local_file = LocalFile(user_id, kb_id, file, file_name)
-        # TODO：现在只能处理txt
+        # TODO：功能待完善，上传文件类型检查
         chars = fast_estimate_file_char_count(local_file.file_location)
         debug_logger.info(f"{file_name} char_size: {chars}")
         if chars and chars > MAX_CHARS:
@@ -219,50 +221,47 @@ async def upload_files(req: request):
         msg = qa_handler.mysql_client.add_file(file_id, user_id, kb_id, file_name, file_size, file_location,
                                                    chunk_size, timestamp)
         debug_logger.info(f"{file_name}, {file_id}, {msg}")
-        # 将文件切割向量化并保存到向量数据库中
-        kb_name = qa_handler.mysql_client.get_knowledge_base_name([local_file.kb_id])[0][2]
-        file_handler = FileHandler(local_file.user_id, kb_name, local_file.kb_id, 
-                                         local_file.file_id, local_file.file_location, 
-                                         local_file.file_name, chunk_size)
-        # txt
-        # 将文件转换为Document类型，langchain
-        file_handler.split_file_to_docs() # Document类
-        # print(file_handler.docs)
-        # 将处理好的Document中内容进行切分 切父块800 没重叠  切子块400 重叠部分100
-        file_handler.docs, full_docs = FileHandler.split_docs(file_handler.docs)
-        parent_chunk_number = len(set(doc.metadata["doc_id"] for doc in file_handler.docs)) # file_handler.docs 列表中每个元素 doc 的不重复的 doc.doc_id 数量
-        # 将切分好的Document存入向量数据库中
-        qa_handler.milvus_client.load_collection_(user_id)
-        for doc in file_handler.docs:
-            # 这里应该能用列表直接把所有的给向量化
-            textvec = qa_handler.embeddings.embed_query(doc.page_content)
-            # print(textvec)
-            file_handler.embs.append(textvec)
-            qa_handler.milvus_client.store_doc(doc, textvec)
-        # 打印切好的子块
-        # print(file_handler.docs)
-        # 将切分好的子块存入es数据库中
-        if qa_handler.es_client is not None:
-            try:
-                # docs的doc_id是file_id + '_' + i 注意这里的docs_id指的是es数据库中的唯一标识
-                # 而不是父块编号
-                docs_ids = [doc.metadata['file_id'] + '_' + str(i) for i, doc in enumerate(file_handler.docs)]
-                # ids指定文档的唯一标识符
-                es_res = await qa_handler.es_client.es_store.aadd_documents(file_handler.docs, ids=docs_ids)
-                debug_logger.info(f'es_store insert number: {len(es_res)}, {es_res[0]}')
-            except Exception as e:
-                debug_logger.error(f"Error in aadd_documents on es_store: {traceback.format_exc()}")
-        # 存入完以后更新mysql中file表的chunks_number
-        # 将切好的父doc存入mysql数据库中
-        qa_handler.mysql_client.store_parent_chunks(full_docs)
-        # 更新文件的chunk number
-        qa_handler.mysql_client.modify_file_chunks_number(file_id, user_id, kb_id, parent_chunk_number)
-        # 返回给前端的数据
-        data.append({"file_id": file_id, "file_name": file_name, "status": "green", 
-                     "bytes": len(local_file.file_content), "timestamp": timestamp, "estimated_chars": chars})
-    # qanything 1.x版本处理方式，2.0以后的版本都是起另外一个服务轮询文件状态，之后添加到向量数据库中
-    # 后面做优化在像他们那样做，这样文件上传流程会快不少
-    # asyncio.create_task(local_doc_qa.insert_files_to_l(user_id, kb_id, local_files))
+        # # 将文件切割向量化并保存到向量数据库中
+        # kb_name = qa_handler.mysql_client.get_knowledge_base_name([local_file.kb_id])[0][2]
+        # file_handler = FileHandler(local_file.user_id, kb_name, local_file.kb_id, 
+        #                                  local_file.file_id, local_file.file_location, 
+        #                                  local_file.file_name, chunk_size)
+        # # txt
+        # # 将文件转换为Document类型，langchain
+        # file_handler.split_file_to_docs() # Document类
+        # # print(file_handler.docs)
+        # # 将处理好的Document中内容进行切分 切父块800 没重叠  切子块400 重叠部分100
+        # file_handler.docs, full_docs = FileHandler.split_docs(file_handler.docs)
+        # parent_chunk_number = len(set(doc.metadata["doc_id"] for doc in file_handler.docs)) # file_handler.docs 列表中每个元素 doc 的不重复的 doc.doc_id 数量
+        # # 将切分好的Document存入向量数据库中
+        # qa_handler.milvus_client.load_collection_(user_id)
+        # for doc in file_handler.docs:
+        #     # 这里应该能用列表直接把所有的给向量化
+        #     textvec = qa_handler.embeddings.embed_query(doc.page_content)
+        #     # print(textvec)
+        #     file_handler.embs.append(textvec)
+        #     qa_handler.milvus_client.store_doc(doc, textvec)
+        # # 打印切好的子块
+        # # print(file_handler.docs)
+        # # 将切分好的子块存入es数据库中
+        # if qa_handler.es_client is not None:
+        #     try:
+        #         # docs的doc_id是file_id + '_' + i 注意这里的docs_id指的是es数据库中的唯一标识
+        #         # 而不是父块编号
+        #         docs_ids = [doc.metadata['file_id'] + '_' + str(i) for i, doc in enumerate(file_handler.docs)]
+        #         # ids指定文档的唯一标识符
+        #         es_res = await qa_handler.es_client.es_store.aadd_documents(file_handler.docs, ids=docs_ids)
+        #         debug_logger.info(f'es_store insert number: {len(es_res)}, {es_res[0]}')
+        #     except Exception as e:
+        #         debug_logger.error(f"Error in aadd_documents on es_store: {traceback.format_exc()}")
+        # # 存入完以后更新mysql中file表的chunks_number
+        # # 将切好的父doc存入mysql数据库中
+        # qa_handler.mysql_client.store_parent_chunks(full_docs)
+        # # 更新文件的chunk number
+        # qa_handler.mysql_client.modify_file_chunks_number(file_id, user_id, kb_id, parent_chunk_number)
+        # # 返回给前端的数据
+        # data.append({"file_id": file_id, "file_name": file_name, "status": "green", 
+        #              "bytes": len(local_file.file_content), "timestamp": timestamp, "estimated_chars": chars})
     if failed_files:
         msg = f"warning, {failed_files} chars is too much, max characters length is {MAX_CHARS}, skip upload."
     elif record_exist_files:
@@ -293,7 +292,7 @@ async def local_doc_chat(req: request):
     custom_prompt = safe_get(req, 'custom_prompt', None)
     rerank = safe_get(req, 'rerank', default=True)
     only_need_search_results = safe_get(req, 'only_need_search_results', False)
-    need_web_search = safe_get(req, 'networking', False)
+    # need_web_search = safe_get(req, 'networking', False)
     api_base = safe_get(req, 'api_base', DEFAULT_API_BASE)
     # 如果api_base中包含0.0.0.0或127.0.0.1或localhost，替换为GATEWAY_IP
     api_base = api_base.replace('0.0.0.0', GATEWAY_IP).replace('127.0.0.1', GATEWAY_IP).replace('localhost',
@@ -357,7 +356,6 @@ async def local_doc_chat(req: request):
     debug_logger.info("max_token: %s", max_token)
     debug_logger.info("request_source: %s", request_source)
     debug_logger.info("only_need_search_results: %s", only_need_search_results)
-    debug_logger.info("need_web_search: %s", need_web_search)
     debug_logger.info("api_base: %s", api_base)
     debug_logger.info("api_key: %s", api_key)
     debug_logger.info("api_context_length: %s", api_context_length)
@@ -407,7 +405,7 @@ async def local_doc_chat(req: request):
                                                                                     rerank=rerank,
                                                                                     custom_prompt=custom_prompt,
                                                                                     time_record=time_record,
-                                                                                    need_web_search=need_web_search,
+                                                                                    # need_web_search=need_web_search,
                                                                                     hybrid_search=hybrid_search,
                                                                                     web_chunk_size=chunk_size,
                                                                                     temperature=temperature,
@@ -417,67 +415,66 @@ async def local_doc_chat(req: request):
                                                                                     top_p=top_p,
                                                                                     top_k=top_k
                                                                                     ):
-                    chunk_data = resp["result"]
-                    if not chunk_data:
-                        continue
-                    chunk_str = chunk_data[6:]
-                    if chunk_str.startswith("[DONE]"):
-                        retrieval_documents = format_source_documents(resp["retrieval_documents"])
-                        source_documents = format_source_documents(resp["source_documents"])
-                        result = next_history[-1][1]
-                        # result = resp['result']
-                        time_record['chat_completed'] = round(time.perf_counter() - preprocess_start, 2)
-                        if time_record.get('llm_completed', 0) > 0:
-                            time_record['tokens_per_second'] = round(
-                                len(result) / time_record['llm_completed'], 2)
-                        formatted_time_record = format_time_record(time_record)
-                        chat_data = {'user_id': user_id, 'kb_ids': kb_ids, 'query': question, "model": model,
-                                    "product_source": request_source, 'time_record': formatted_time_record,
-                                    'history': history,
-                                    'condense_question': resp['condense_question'], 'prompt': resp['prompt'],
-                                    'result': result, 'retrieval_documents': retrieval_documents,
-                                    'source_documents': source_documents}
-                        qa_handler.mysql_client.add_qalog(**chat_data)
-                        debug_logger.info("chat_data: %s", chat_data)
-                        debug_logger.info("response: %s", chat_data['result'])
-                        stream_res = {
-                            "code": 200,
-                            "msg": "success stream chat",
-                            "question": question,
-                            "response": result,
-                            "model": model,
-                            "history": next_history,
-                            "condense_question": resp['condense_question'],
-                            "source_documents": source_documents,
-                            "retrieval_documents": retrieval_documents,
-                            "time_record": formatted_time_record,
-                            "show_images": resp.get('show_images', [])
-                        }
-                    else:
-                        time_record['rollback_length'] = resp.get('rollback_length', 0)
-                        if 'first_return' not in time_record:
-                            time_record['first_return'] = round(time.perf_counter() - preprocess_start, 2)
-                        chunk_js = json.loads(chunk_str)
-                        delta_answer = chunk_js["answer"]
-                        stream_res = {
-                            "code": 200,
-                            "msg": "success",
-                            "question": "",
-                            "response": delta_answer,
-                            "history": [],
-                            "source_documents": [],
-                            "retrieval_documents": [],
-                            "time_record": format_time_record(time_record),
-                        }
-                    await response.write(f"data: {json.dumps(stream_res, ensure_ascii=False)}\n\n")
-                    if chunk_str.startswith("[DONE]"):
-                        await response.eof()
-                    await asyncio.sleep(0.001)
-
-            response_stream = ResponseStream(generate_answer, content_type='text/event-stream')
-            return response_stream
+                chunk_data = resp["result"]
+                if not chunk_data:
+                    continue
+                chunk_str = chunk_data[6:]
+                if chunk_str.startswith("[DONE]"):
+                    retrieval_documents = format_source_documents(resp["retrieval_documents"])
+                    source_documents = format_source_documents(resp["source_documents"])
+                    result = next_history[-1][1]
+                    # result = resp['result']
+                    time_record['chat_completed'] = round(time.perf_counter() - preprocess_start, 2)
+                    if time_record.get('llm_completed', 0) > 0:
+                        time_record['tokens_per_second'] = round(
+                            len(result) / time_record['llm_completed'], 2)
+                    formatted_time_record = format_time_record(time_record)
+                    chat_data = {'user_id': user_id, 'kb_ids': kb_ids, 'query': question, "model": model,
+                                "product_source": request_source, 'time_record': formatted_time_record,
+                                'history': history,
+                                'condense_question': resp['condense_question'], 'prompt': resp['prompt'],
+                                'result': result, 'retrieval_documents': retrieval_documents,
+                                'source_documents': source_documents}
+                    qa_handler.mysql_client.add_qalog(**chat_data)
+                    debug_logger.info("chat_data: %s", chat_data)
+                    debug_logger.info("response: %s", chat_data['result'])
+                    stream_res = {
+                        "code": 200,
+                        "msg": "success stream chat",
+                        "question": question,
+                        "response": result,
+                        "model": model,
+                        "history": next_history,
+                        "condense_question": resp['condense_question'],
+                        "source_documents": source_documents,
+                        "retrieval_documents": retrieval_documents,
+                        "time_record": formatted_time_record,
+                        "show_images": resp.get('show_images', [])
+                    }
+                else:
+                    time_record['rollback_length'] = resp.get('rollback_length', 0)
+                    if 'first_return' not in time_record:
+                        time_record['first_return'] = round(time.perf_counter() - preprocess_start, 2)
+                    chunk_js = json.loads(chunk_str)
+                    delta_answer = chunk_js["answer"]
+                    stream_res = {
+                        "code": 200,
+                        "msg": "success",
+                        "question": "",
+                        "response": delta_answer,
+                        "history": [],
+                        "source_documents": [],
+                        "retrieval_documents": [],
+                        "time_record": format_time_record(time_record),
+                    }
+                await response.write(f"data: {json.dumps(stream_res, ensure_ascii=False)}\n\n")
+                if chunk_str.startswith("[DONE]"):
+                    await response.eof()
+                await asyncio.sleep(0.001)
+        # 返回流式相应
+        response_stream = ResponseStream(generate_answer, content_type='text/event-stream')
+        return response_stream
     else:
-        # 进行检索生成回答
         async for resp, history in qa_handler.get_knowledge_based_answer(model=model,
                                                                            max_token=max_token,
                                                                            kb_ids=kb_ids,
@@ -488,7 +485,7 @@ async def local_doc_chat(req: request):
                                                                            custom_prompt=custom_prompt,
                                                                            time_record=time_record,
                                                                            only_need_search_results=only_need_search_results,
-                                                                           need_web_search=need_web_search,
+                                                                        #    need_web_search=need_web_search,
                                                                            hybrid_search=hybrid_search,
                                                                            web_chunk_size=chunk_size,
                                                                            temperature=temperature,
@@ -498,60 +495,121 @@ async def local_doc_chat(req: request):
                                                                            top_p=top_p,
                                                                            top_k=top_k
                                                                            ):
-            # 如果只需要检索到的文档
-            if only_need_search_results:
-                return sanic_json(
-                    {"code": 200, "question": question, "source_documents": format_source_documents(resp)})
-            # 格式化检索到的文档信息
-            retrieval_documents = format_source_documents(resp["retrieval_documents"])
-            source_documents = format_source_documents(resp["source_documents"])
-            formatted_time_record = format_time_record(time_record)
-            chat_data = {'user_id': user_id, 'kb_ids': kb_ids, 'query': question, 'time_record': formatted_time_record,
-                        'history': history, "condense_question": resp['condense_question'], "model": model,
-                        "product_source": request_source,
-                        'retrieval_documents': retrieval_documents, 'prompt': resp['prompt'], 'result': resp['result'],
-                        'source_documents': source_documents}
-            # qa_handler.mysql_client.add_qalog(**chat_data)
-            debug_logger.info("chat_data: %s", chat_data)
-            debug_logger.info("response: %s", chat_data['result'])
-            return sanic_json({"code": 200, "msg": "success no stream chat", "question": question,
-                            "response": resp["result"], "model": model,
-                            "history": history, "condense_question": resp['condense_question'],
-                            "source_documents": source_documents, "retrieval_documents": retrieval_documents,
-                            "time_record": formatted_time_record})
+            pass
+            
+        # 如果只需要检索到的文档
+        if only_need_search_results:
+            return sanic_json(
+                {"code": 200, "question": question, "source_documents": format_source_documents(resp)})
+        # 格式化检索到的文档信息
+        retrieval_documents = format_source_documents(resp["retrieval_documents"])
+        source_documents = format_source_documents(resp["source_documents"])
+        formatted_time_record = format_time_record(time_record)
+        chat_data = {'user_id': user_id, 'kb_ids': kb_ids, 'query': question, 'time_record': formatted_time_record,
+                    'history': history, "condense_question": resp['condense_question'], "model": model,
+                    "product_source": request_source,
+                    'retrieval_documents': retrieval_documents, 'prompt': resp['prompt'], 'result': resp['result'],
+                    'source_documents': source_documents}
+        # qa_handler.mysql_client.add_qalog(**chat_data)
+        debug_logger.info("chat_data: %s", chat_data)
+        debug_logger.info("response: %s", chat_data['result'])
+        return sanic_json({"code": 200, "msg": "success no stream chat", "question": question,
+                        "response": resp["result"], "model": model,
+                        "history": history, "condense_question": resp['condense_question'],
+                        "source_documents": source_documents, "retrieval_documents": retrieval_documents,
+                        "time_record": formatted_time_record})
 
 @get_time_async
 async def list_kbs(req: request):
+    """
+    Placeholder: This function is intended to list all knowledge bases for a given user.
+    The actual implementation for querying the database and returning the list
+    needs to be added here.
+    """
+    return sanic_json({"code": 200, "msg": "success", "data": []})
+
+@get_time_async
+async def upload_faqs(req: request):
     qa_handler: QAHandler = req.app.ctx.qa_handler
     user_id = safe_get(req, 'user_id')
     user_info = safe_get(req, 'user_info', "1234")
-
-    # 1. 校验 user_id 和 user_info
     passed, msg = check_user_id_and_user_info(user_id, user_info)
     if not passed:
         return sanic_json({"code": 2001, "msg": msg})
     user_id = user_id + '__' + user_info
-    debug_logger.info("list_kbs %s", user_id)
+    debug_logger.info("upload_faqs %s", user_id)
+    debug_logger.info("user_info %s", user_info)
+    kb_id = safe_get(req, 'kb_id')
+    # kb_id = correct_kb_id(kb_id)
+    debug_logger.info("kb_id %s", kb_id)
+    faqs = safe_get(req, 'faqs')
+    chunk_size = safe_get(req, 'chunk_size', default=DEFAULT_PARENT_CHUNK_SIZE)
+    debug_logger.info("chunk_size: %s", chunk_size)
 
-    try:
-        # 2. 调用 MysqlClient 的新方法获取知识库列表
-        all_kbs_raw = qa_handler.mysql_client.get_all_knowledge_bases_for_user(
-            user_id)  # 新增的方法
+    # 增加上传文件的功能和上传文件的检查解析
+    file_status = {}
+    if faqs is None:
+        files = req.files.getlist('files')
+        faqs = []
+        for file in files:
+            debug_logger.info('ori name: %s', file.name)
+            file_name = urllib.parse.unquote(file.name, encoding='UTF-8')
+            debug_logger.info('decode name: %s', file_name)
+            # 删除掉全角字符
+            file_name = re.sub(r'[\uFF01-\uFF5E\u3000-\u303F]', '', file_name)
+            file_name = file_name.replace("/", "_")
+            debug_logger.info('cleaned name: %s', file_name)
+            file_name = truncate_filename(file_name)
+            # check_and_transform_excel is expected to return either:
+            # - a list (on success), or
+            # - a string (on error)
+            file_faqs = check_and_transform_excel(file.body)
+            debug_logger.info(f"{file_name} faqs: {file_faqs}")
+            if isinstance(file_faqs, str):
+                file_status[file_name] = file_faqs
+            elif isinstance(file_faqs, list):
+                faqs.extend(file_faqs)
+                file_status[file_name] = "success"
+            else:
+                # Unexpected return type: log error and skip this file
+                error_msg = f"Unexpected return type from check_and_transform_excel: {type(file_faqs)}"
+                debug_logger.error(error_msg)
+                file_status[file_name] = error_msg
 
-        # 3. 格式化返回数据
-        kb_list = []
-        if all_kbs_raw:
-            for kb_id, _, kb_name, latest_qa_time, latest_insert_time in all_kbs_raw:
-                kb_list.append({
-                    "kb_id": kb_id,
-                    "kb_name": kb_name,
-                    "latest_qa_time": latest_qa_time.strftime("%Y-%m-%d %H:%M:%S") if latest_qa_time else None,
-                    "latest_insert_time": latest_insert_time.strftime("%Y-%m-%d %H:%M:%S") if latest_insert_time else None
-                })
+    if len(faqs) > 1000:
+        return sanic_json({"code": 2002, "msg": f"fail, faqs too many, max length is 1000."})
 
-        return sanic_json({"code": 200, "msg": "success", "data": kb_list})
+    not_exist_kb_ids = qa_handler.mysql_client.check_kb_exist(user_id, [kb_id])
+    if not_exist_kb_ids:
+        msg = "invalid kb_id: {}, please check...".format(not_exist_kb_ids)
+        return sanic_json({"code": 2001, "msg": msg})
 
-    except Exception as e:
-        debug_logger.error(
-            f"Error listing knowledge bases for {user_id}: {traceback.format_exc()}")
-        return sanic_json({"code": 5000, "msg": f"An error occurred: {str(e)}"})
+    data = []
+    local_files = []
+    now = datetime.now()
+    timestamp = now.strftime("%Y%m%d%H%M")
+    debug_logger.info(f"start insert {len(faqs)} faqs to mysql, user_id: {user_id}, kb_id: {kb_id}")
+    for faq in tqdm(faqs):
+        ques = faq['question']
+        if len(ques) > 512 or len(faq['answer']) > 2048:
+            return sanic_json(
+                {"code": 2003, "msg": f"fail, faq too long, max length of question is 512, answer is 2048."})
+        file_name = f"FAQ_{ques}.faq"
+        file_name = file_name.replace("/", "_").replace(":", "_")  # 文件名中的/和：会导致写入时出错
+        file_name = simplify_filename(file_name)
+        file_size = len(ques) + len(faq['answer'])
+        local_file = LocalFile(user_id, kb_id, faq, file_name)
+        file_id = local_file.file_id
+        file_location = local_file.file_location
+        local_files.append(local_file)
+        qa_handler.mysql_client.add_faq(file_id, user_id, kb_id, faq['question'], faq['answer'], faq.get('nos_keys', ''))
+        qa_handler.mysql_client.add_file(file_id, user_id, kb_id, file_name, file_size, file_location,
+                                             chunk_size, timestamp)
+        # debug_logger.info(f"{file_name}, {file_id}, {msg}, {faq}")
+        data.append(
+            {"file_id": file_id, "file_name": file_name, "status": "gray", "length": file_size,
+             "timestamp": timestamp})
+    debug_logger.info(f"end insert {len(faqs)} faqs to mysql, user_id: {user_id}, kb_id: {kb_id}")
+
+    msg = "success，后台正在飞速上传文件，请耐心等待"
+    return sanic_json({"code": 200, "msg": msg, "data": data})

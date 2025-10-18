@@ -33,12 +33,14 @@ echo "PID saved to embedding.pid file"
 
 # 等待几秒钟让服务启动
 echo "Waiting for service to start..."
-sleep 10
+sleep 20
 
-# 检查服务是否成功启动
-if lsof -i :9001 > /dev/null 2>&1; then
+# 检查端口并更新PID文件
+PORT_PID=$(lsof -ti :9001)
+if [ ! -z "$PORT_PID" ]; then
+    echo $PORT_PID > embedding.pid
     echo "✓ Embedding service started successfully"
-    echo "✓ Service is running on port 9001"
+    echo "✓ Service is running on port 9001 (PID: $PORT_PID)"
     echo "✓ Log file: record.log"
     echo "✓ PID file: embedding.pid"
 else

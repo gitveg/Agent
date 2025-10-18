@@ -384,7 +384,7 @@ class MysqlClient:
     
     # [文件] 向指定知识库下面增加文件
     def add_file(self, file_id, user_id, kb_id, file_name, file_size, file_location, chunk_size, timestamp, file_url='',
-                 status="green"):
+                 status="gray"):
         query = ("INSERT INTO File (file_id, user_id, kb_id, file_name, status, file_size, file_location, chunk_size, "
                  "timestamp, file_url) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)")
         self.execute_query_(query,
@@ -396,7 +396,7 @@ class MysqlClient:
         query = ("UPDATE File SET chunks_number = %s WHERE file_id = %s AND user_id = %s AND kb_id = %s")
         self.execute_query_(query, (chunks_number, file_id, user_id, kb_id), commit=True)
 
-    def store_parent_chunks(self, docs):
+    def store_parent_chunks(self, docs): 
         query = """
             INSERT INTO Documents (doc_id, json_data)
             VALUES (%s, %s)
@@ -419,3 +419,41 @@ class MysqlClient:
             return result[0][0] == 1
         else:
             return False
+        
+    def add_faq(self, faq_id, user_id, kb_id, question, answer, nos_keys):
+        # insert_logger.info(f"add_faq: {faq_id}, {user_id}, {kb_id}, {question}, {nos_keys}")
+        query = "INSERT INTO Faqs (faq_id, user_id, kb_id, question, answer, nos_keys) VALUES (%s, %s, %s, %s, %s, %s)"
+        self.execute_query_(query, (faq_id, user_id, kb_id, question, answer, nos_keys), commit=True)
+        
+    def update_file_msg(self, file_id, msg):
+        query = "UPDATE File SET msg = %s WHERE file_id = %s"
+        insert_logger.info(f"Update file msg: {file_id} {msg}")
+        self.execute_query_(query, (msg, file_id), commit=True)
+        
+    def update_file_upload_infos(self, file_id, upload_infos):
+        upload_infos = json.dumps(upload_infos, ensure_ascii=False)
+        query = "UPDATE File SET upload_infos = %s WHERE file_id = %s"
+        self.execute_query_(query, (upload_infos, file_id), commit=True)
+        
+    def update_knowlegde_base_latest_insert_time(self, kb_id, timestamp):
+        query = "UPDATE KnowledgeBase SET latest_insert_time = %s WHERE kb_id = %s"
+        self.execute_query_(query, (timestamp, kb_id), commit=True)
+        
+    
+    def get_faq(self, faq_id) -> tuple:
+        query = "SELECT user_id, kb_id, question, answer, nos_keys FROM Faqs WHERE faq_id = %s"
+        faq_all = self.execute_query_(query, (faq_id,), fetch=True)
+        if faq_all:
+            faq = faq_all[0]
+            debug_logger.info(f"get_faq: faq_id: {faq_id}, mysql res: {faq}")
+            return faq
+        else:
+            debug_logger.error(f"get_faq: faq_id: {faq_id} not found")
+            return None
+    def get_files_name_by_id(self, file_id):
+        query = "SELECT file_name FROM File WHERE file_id = %s"
+        result = self.execute_query_(query, (file_id,), fetch=True)
+        if result:
+            return result[0][0]
+        else:
+            return ""
